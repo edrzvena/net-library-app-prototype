@@ -1,10 +1,16 @@
 using LibraryAppPrototype.Components;
+using LibraryAppPrototype.Data;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+// Factory, BUKAN AddDbContext — lihat PRD bagian 11.1
+builder.Services.AddDbContextFactory<AppDbContext>(o =>
+    o.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 var app = builder.Build();
 

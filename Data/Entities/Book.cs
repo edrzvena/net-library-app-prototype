@@ -38,6 +38,7 @@ public class Book
     public decimal ReplacementCost { get; set; }
 
     // UTC, diisi BookService dari IClock.UtcNow — tanpa DEFAULT di database.
+    [Precision(0)]
     public DateTime CreatedAt { get; set; }
 
     public List<BookCopy> Copies { get; set; } = [];
