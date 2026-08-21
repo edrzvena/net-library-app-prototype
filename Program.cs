@@ -1,5 +1,6 @@
 using LibraryAppPrototype.Components;
 using LibraryAppPrototype.Data;
+using LibraryAppPrototype.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,10 +13,22 @@ builder.Services.AddRazorComponents()
 builder.Services.AddDbContextFactory<AppDbContext>(o =>
     o.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+builder.Services.AddSingleton<IClock, SystemClock>();
+
+// Registrasi 6 service modul menyusul di Fase 3.
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-if (!app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment())
+{
+    await using var db = await app.Services
+        .GetRequiredService<IDbContextFactory<AppDbContext>>()
+        .CreateDbContextAsync();
+    await db.Database.MigrateAsync();
+    await DbSeeder.SeedAsync(db, app.Services.GetRequiredService<IClock>());
+}
+else
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
