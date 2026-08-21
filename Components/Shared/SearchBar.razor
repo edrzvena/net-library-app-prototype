@@ -1,0 +1,33 @@
+<div class="input-group">
+    <span class="input-group-text"><i class="bi bi-search"></i></span>
+
+    <input type="search"
+           class="form-control"
+           placeholder="@Placeholder"
+           value="@Value"
+           @oninput="OnInput"
+           @onkeydown="OnKeyDown"/>
+
+    <button class="btn btn-primary" type="button" @onclick="SearchAsync">Cari</button>
+</div>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Cari...";
+    [Parameter] public EventCallback OnSearch { get; set; }
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        Value = e.Value?.ToString();
+        await ValueChanged.InvokeAsync(Value);
+    }
+
+    // Enter memicu pencarian — kebiasaan yang diharapkan di kotak cari.
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await SearchAsync();
+    }
+
+    private Task SearchAsync() => OnSearch.InvokeAsync();
+}

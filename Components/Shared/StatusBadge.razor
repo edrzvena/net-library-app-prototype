@@ -1,0 +1,55 @@
+<span class="badge text-bg-@Variant">@Text</span>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = string.Empty;
+
+    // success / warning / danger / secondary — lihat tabel konvensi UI di PRD 10.2.
+    [Parameter] public string Variant { get; set; } = "secondary";
+
+    // Pemetaan enum -> (label Indonesia, warna badge). Ini murni urusan tampilan,
+    // bukan aturan bisnis, jadi tempatnya memang di komponen presentasi.
+    public static (string Text, string Variant) Describe(BookCopyStatus status) => status switch
+    {
+        BookCopyStatus.Available => ("Tersedia", "success"),
+        BookCopyStatus.OnLoan => ("Dipinjam", "warning"),
+        BookCopyStatus.Lost => ("Hilang", "danger"),
+        BookCopyStatus.Damaged => ("Rusak", "danger"),
+        BookCopyStatus.Retired => ("Ditarik", "secondary"),
+        _ => (status.ToString(), "secondary")
+    };
+
+    public static (string Text, string Variant) Describe(MemberStatus status) => status switch
+    {
+        MemberStatus.Active => ("Aktif", "success"),
+        MemberStatus.Suspended => ("Ditangguhkan", "danger"),
+        MemberStatus.Inactive => ("Tidak Aktif", "secondary"),
+        _ => (status.ToString(), "secondary")
+    };
+
+    public static (string Text, string Variant) Describe(FineStatus status) => status switch
+    {
+        FineStatus.Unpaid => ("Belum Lunas", "warning"),
+        FineStatus.Paid => ("Lunas", "success"),
+        FineStatus.Waived => ("Dihapuskan", "secondary"),
+        _ => (status.ToString(), "secondary")
+    };
+
+    public static (string Text, string Variant) Describe(FineReason reason) => reason switch
+    {
+        FineReason.LateReturn => ("Terlambat", "warning"),
+        FineReason.LostBook => ("Buku Hilang", "danger"),
+        FineReason.DamagedBook => ("Buku Rusak", "danger"),
+        _ => (reason.ToString(), "secondary")
+    };
+
+    // BR-19: "Terlambat" bukan nilai LoanStatus, tapi turunan dari DueDate.
+    // Perhitungannya dipinjam dari Loan.IsOverdue(today) — satu-satunya logika yang boleh nempel di entity.
+    public static (string Text, string Variant) Describe(Loan loan, DateOnly today) => loan.Status switch
+    {
+        LoanStatus.Active when loan.IsOverdue(today) => ("Terlambat", "danger"),
+        LoanStatus.Active => ("Aktif", "success"),
+        LoanStatus.Returned => ("Dikembalikan", "secondary"),
+        LoanStatus.Lost => ("Hilang", "danger"),
+        _ => (loan.Status.ToString(), "secondary")
+    };
+}

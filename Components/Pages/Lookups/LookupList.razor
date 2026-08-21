@@ -1,0 +1,195 @@
+@page "/lookups"
+@rendermode InteractiveServer
+@inject LookupService Lookups
+
+<PageTitle>Penulis &amp; Kategori</PageTitle>
+
+<PageHeader Title="Penulis &amp; Kategori"
+            Subtitle="Data master yang dipakai saat mendaftarkan buku."/>
+
+<ErrorAlert Code="@_errorCode" Message="@_errorMessage" OnDismiss="() => _errorMessage = null"/>
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <button class="nav-link @(_tab == Tab.Authors ? "active" : null)" @onclick="() => _tab = Tab.Authors">
+            Penulis <span class="badge text-bg-secondary">@_authors.Count</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(_tab == Tab.Categories ? "active" : null)" @onclick="() => _tab = Tab.Categories">
+            Kategori <span class="badge text-bg-secondary">@_categories.Count</span>
+        </button>
+    </li>
+</ul>
+
+@if (_tab == Tab.Authors)
+{
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h2 class="h6">Tambah penulis</h2>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label" for="author-name">Nama</label>
+                    <input id="author-name" class="form-control" @bind="_authorName" @bind:event="oninput"/>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="author-bio">Biografi (opsional)</label>
+                    <input id="author-bio" class="form-control" @bind="_authorBio" @bind:event="oninput"/>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary w-100" disabled="@_busy" @onclick="AddAuthorAsync">
+                        @if (_busy)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Tambah
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead>
+            <tr>
+                <th>Nama</th>
+                <th>Biografi</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var a in _authors)
+            {
+                <tr>
+                    <td>@a.Name</td>
+                    <td class="text-muted">@(string.IsNullOrWhiteSpace(a.Biography) ? "—" : a.Biography)</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+
+    @if (_authors.Count == 0)
+    {
+        <p class="text-muted">Belum ada penulis.</p>
+    }
+}
+else
+{
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h2 class="h6">Tambah kategori</h2>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label" for="category-name">Nama</label>
+                    <input id="category-name" class="form-control" @bind="_categoryName" @bind:event="oninput"/>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="category-desc">Deskripsi (opsional)</label>
+                    <input id="category-desc" class="form-control" @bind="_categoryDescription" @bind:event="oninput"/>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary w-100" disabled="@_busy" @onclick="AddCategoryAsync">
+                        @if (_busy)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Tambah
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead>
+            <tr>
+                <th>Nama</th>
+                <th>Deskripsi</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var c in _categories)
+            {
+                <tr>
+                    <td>@c.Name</td>
+                    <td class="text-muted">@(string.IsNullOrWhiteSpace(c.Description) ? "—" : c.Description)</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+
+    @if (_categories.Count == 0)
+    {
+        <p class="text-muted">Belum ada kategori.</p>
+    }
+}
+
+@code {
+    private enum Tab { Authors, Categories }
+
+    private Tab _tab = Tab.Authors;
+    private List<Author> _authors = [];
+    private List<Category> _categories = [];
+
+    private string? _authorName;
+    private string? _authorBio;
+    private string? _categoryName;
+    private string? _categoryDescription;
+
+    private bool _busy;
+    private string? _errorCode;
+    private string? _errorMessage;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _authors = await Lookups.GetAuthorsAsync();
+        _categories = await Lookups.GetCategoriesAsync();
+    }
+
+    private async Task AddAuthorAsync()
+    {
+        _busy = true;
+        _errorMessage = null;
+
+        var result = await Lookups.CreateAuthorAsync(_authorName ?? string.Empty, _authorBio);
+
+        _busy = false;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;
+            _errorMessage = result.Message;
+            return;
+        }
+
+        _authorName = null;
+        _authorBio = null;
+        await ReloadAsync();
+    }
+
+    private async Task AddCategoryAsync()
+    {
+        _busy = true;
+        _errorMessage = null;
+
+        var result = await Lookups.CreateCategoryAsync(_categoryName ?? string.Empty, _categoryDescription);
+
+        _busy = false;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;
+            _errorMessage = result.Message;
+            return;
+        }
+
+        _categoryName = null;
+        _categoryDescription = null;
+        await ReloadAsync();
+    }
+}

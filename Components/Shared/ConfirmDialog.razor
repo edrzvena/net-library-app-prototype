@@ -1,0 +1,87 @@
+@* Modal Bootstrap tanpa JS: visibilitasnya dikendalikan langsung lewat class & style. *@
+<div class="modal fade @(Visible ? "show d-block" : null)" tabindex="-1" role="dialog" aria-hidden="@(!Visible)">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">@Title</h5>
+                <button type="button" class="btn-close" aria-label="Tutup" @onclick="CancelAsync"></button>
+            </div>
+
+            <div class="modal-body">
+                <p class="mb-@(RequireReason ? "3" : "0")">@Message</p>
+
+                @if (RequireReason)
+                {
+                    <label class="form-label" for="confirm-reason">Alasan</label>
+                    <textarea id="confirm-reason"
+                              class="form-control @(_reasonInvalid ? "is-invalid" : null)"
+                              rows="3"
+                              placeholder="@ReasonPlaceholder"
+                              value="@_reason"
+                              @oninput="e => { _reason = e.Value?.ToString(); _reasonInvalid = false; }"></textarea>
+
+                    @if (_reasonInvalid)
+                    {
+                        @* Validasi panjang minimalnya ditegakkan service (BR-20); di sini cuma
+                           mencegah kirim kosong supaya bolak-baliknya tidak sia-sia. *@
+                        <div class="invalid-feedback">Alasan wajib diisi.</div>
+                    }
+                }
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="CancelAsync">Batal</button>
+                <button type="button" class="btn @ConfirmButtonClass" disabled="@Busy" @onclick="ConfirmAsync">
+                    @if (Busy)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    @ConfirmText
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (Visible)
+{
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Message { get; set; }
+
+    // BR-20: dipakai FineList saat menghapuskan denda.
+    [Parameter] public bool RequireReason { get; set; }
+    [Parameter] public string? ReasonPlaceholder { get; set; }
+
+    [Parameter] public string ConfirmText { get; set; } = "Ya, lanjutkan";
+    [Parameter] public string ConfirmButtonClass { get; set; } = "btn-danger";
+    [Parameter] public bool Busy { get; set; }
+
+    [Parameter] public EventCallback<string?> OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private string? _reason;
+    private bool _reasonInvalid;
+
+    private async Task ConfirmAsync()
+    {
+        if (RequireReason && string.IsNullOrWhiteSpace(_reason))
+        {
+            _reasonInvalid = true;
+            return;
+        }
+
+        await OnConfirm.InvokeAsync(_reason);
+    }
+
+    private async Task CancelAsync()
+    {
+        _reason = null;
+        _reasonInvalid = false;
+        await OnCancel.InvokeAsync();
+    }
+}

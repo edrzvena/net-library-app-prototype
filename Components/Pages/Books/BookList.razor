@@ -1,0 +1,100 @@
+@page "/books"
+@rendermode InteractiveServer
+@inject BookService Books
+@inject LookupService Lookups
+
+<PageTitle>Buku</PageTitle>
+
+<PageHeader Title="Buku" Subtitle="Katalog buku dan ketersediaan eksemplarnya.">
+    <Actions>
+        <a class="btn btn-primary" href="books/new">
+            <i class="bi bi-plus-lg"></i> Tambah Buku
+        </a>
+    </Actions>
+</PageHeader>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <SearchBar @bind-Value="_keyword"
+                   Placeholder="Cari judul, ISBN, atau penulis..."
+                   OnSearch="() => LoadAsync(1)"/>
+    </div>
+
+    <div class="col-md-4">
+        <select class="form-select" @bind="_categoryId" @bind:after="() => LoadAsync(1)">
+            <option value="0">Semua kategori</option>
+            @foreach (var c in _categories)
+            {
+                <option value="@c.Id">@c.Name</option>
+            }
+        </select>
+    </div>
+
+    <div class="col-md-2 d-flex align-items-center">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="only-available"
+                   @bind="_onlyAvailable" @bind:after="() => LoadAsync(1)"/>
+            <label class="form-check-label" for="only-available">Hanya tersedia</label>
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead>
+        <tr>
+            <th>Judul</th>
+            <th>Penulis</th>
+            <th>Kategori</th>
+            <th>ISBN</th>
+            <th class="text-end">Tersedia</th>
+            <th></th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var book in _result.Items)
+        {
+            <tr>
+                <td><a href="books/@book.Id">@book.Title</a></td>
+                <td>@book.Author.Name</td>
+                <td>@book.Category.Name</td>
+                <td><code>@book.Isbn</code></td>
+                <td class="text-end">@book.AvailableCopies / @book.TotalCopies</td>
+                <td class="text-end">
+                    <a class="btn btn-outline-secondary btn-sm" href="books/@book.Id/edit">Ubah</a>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+@if (_result.TotalCount == 0)
+{
+    <p class="text-muted">Tidak ada buku yang cocok dengan pencarian.</p>
+}
+
+<PaginationControl Page="_result.Page" PageSize="_result.PageSize" TotalCount="_result.TotalCount"
+                   OnPageChanged="LoadAsync"/>
+
+@code {
+    private PagedList<Book> _result = PagedList<Book>.Empty(1, PageSize);
+    private List<Category> _categories = [];
+
+    private string? _keyword;
+    private int _categoryId;
+    private bool _onlyAvailable;
+
+    private const int PageSize = 10;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _categories = await Lookups.GetCategoriesAsync();
+        await LoadAsync(1);
+    }
+
+    private async Task LoadAsync(int page)
+    {
+        _result = await Books.SearchAsync(_keyword, _categoryId, _onlyAvailable, page, PageSize);
+    }
+}

@@ -1,7 +1,14 @@
+using System.Globalization;
 using LibraryAppPrototype.Components;
 using LibraryAppPrototype.Data;
 using LibraryAppPrototype.Services;
 using Microsoft.EntityFrameworkCore;
+
+// Pesan error dan tampilan angka ditulis untuk pengguna Indonesia (aturan 14.1 no. 11),
+// jadi format mata uang ":C0" harus menghasilkan "Rp4.000", bukan "$4,000" milik culture mesin.
+var appCulture = new CultureInfo("id-ID");
+CultureInfo.DefaultThreadCurrentCulture = appCulture;
+CultureInfo.DefaultThreadCurrentUICulture = appCulture;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,7 +22,12 @@ builder.Services.AddDbContextFactory<AppDbContext>(o =>
 
 builder.Services.AddSingleton<IClock, SystemClock>();
 
-// Registrasi 6 service modul menyusul di Fase 3.
+builder.Services.AddScoped<BookService>();
+builder.Services.AddScoped<MemberService>();
+builder.Services.AddScoped<LoanService>();
+builder.Services.AddScoped<FineService>();
+builder.Services.AddScoped<LookupService>();
+builder.Services.AddScoped<DashboardService>();
 
 var app = builder.Build();
 
