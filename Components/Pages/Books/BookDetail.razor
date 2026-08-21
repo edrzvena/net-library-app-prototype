@@ -1,0 +1,241 @@
+@page "/books/{Id:int}"
+@rendermode InteractiveServer
+@inject BookService Books
+@inject NavigationManager Nav
+
+<PageTitle>@(_book?.Title ?? "Detail Buku")</PageTitle>
+
+<ErrorAlert Code="@_errorCode" Message="@_errorMessage" OnDismiss="() => _errorMessage = null"/>
+
+@if (_book is null)
+{
+    <p class="text-muted">Buku tidak ditemukan.</p>
+}
+else
+{
+    <PageHeader Title="@_book.Title" Subtitle="@($"{_book.Author.Name} · {_book.Category.Name}")">
+        <Actions>
+            <a class="btn btn-outline-secondary" href="books/@_book.Id/edit">Ubah</a>
+            <button class="btn btn-outline-danger" @onclick="() => _confirmDeleteBook = true">Hapus</button>
+        </Actions>
+    </PageHeader>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">ISBN</div>
+                    <code>@_book.Isbn</code>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Penerbit / Tahun</div>
+                    @(_book.Publisher ?? "—") / @(_book.PublishedYear?.ToString() ?? "—")
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Harga Penggantian</div>
+                    @_book.ReplacementCost.ToString("C0")
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Ketersediaan</div>
+                    @_book.AvailableCopies dari @_book.TotalCopies eksemplar
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_book.Description))
+    {
+        <p>@_book.Description</p>
+    }
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="h5 mb-0">Eksemplar</h2>
+        <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="AddCopyAsync">
+            @if (_busy)
+            {
+                <span class="spinner-border spinner-border-sm me-1"></span>
+            }
+            <i class="bi bi-plus-lg"></i> Tambah Kopi
+        </button>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead>
+            <tr>
+                <th>Kode Inventaris</th>
+                <th>Status</th>
+                <th>Tanggal Perolehan</th>
+                <th class="text-end">Ubah Status</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var copy in _book.Copies.OrderBy(c => c.InventoryCode))
+            {
+                var (text, variant) = StatusBadge.Describe(copy.Status);
+                <tr>
+                    <td><code>@copy.InventoryCode</code></td>
+                    <td><StatusBadge Text="@text" Variant="@variant"/></td>
+                    <td>@copy.AcquiredAt.ToString("dd MMM yyyy")</td>
+                    <td class="text-end">
+                        <div class="btn-group btn-group-sm">
+                            @foreach (var target in SelectableStatuses)
+                            {
+                                <button class="btn btn-outline-secondary"
+                                        disabled="@(_busy || copy.Status == target)"
+                                        @onclick="() => ChangeStatusAsync(copy.Id, target)">
+                                    @StatusBadge.Describe(target).Text
+                                </button>
+                            }
+                            <button class="btn btn-outline-danger"
+                                    disabled="@_busy"
+                                    @onclick="() => _confirmRemoveCopyId = copy.Id">
+                                Hapus
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+
+    @if (_book.Copies.Count == 0)
+    {
+        <p class="text-muted">Buku ini belum punya eksemplar.</p>
+    }
+
+    <ConfirmDialog Visible="_confirmDeleteBook"
+                   Title="Hapus buku?"
+                   Message="@($"Buku \"{_book.Title}\" beserta seluruh eksemplarnya akan dihapus permanen.")"
+                   ConfirmText="Hapus"
+                   Busy="_busy"
+                   OnConfirm="DeleteBookAsync"
+                   OnCancel="() => _confirmDeleteBook = false"/>
+
+    <ConfirmDialog Visible="_confirmRemoveCopyId is not null"
+                   Title="Hapus eksemplar?"
+                   Message="Eksemplar ini akan dihapus permanen dari katalog."
+                   ConfirmText="Hapus"
+                   Busy="_busy"
+                   OnConfirm="RemoveCopyAsync"
+                   OnCancel="() => _confirmRemoveCopyId = null"/>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    // Status yang boleh dipilih petugas. OnLoan sengaja tidak ada — status itu hanya
+    // boleh diberikan lewat proses peminjaman (BR-21), dan BookService juga menolaknya.
+    private static readonly BookCopyStatus[] SelectableStatuses =
+    [
+        BookCopyStatus.Available,
+        BookCopyStatus.Damaged,
+        BookCopyStatus.Lost,
+        BookCopyStatus.Retired
+    ];
+
+    private Book? _book;
+    private bool _confirmDeleteBook;
+    private int? _confirmRemoveCopyId;
+
+    private bool _busy;
+    private string? _errorCode;
+    private string? _errorMessage;
+
+    protected override Task OnParametersSetAsync() => ReloadAsync();
+
+    private async Task ReloadAsync() => _book = await Books.GetByIdAsync(Id);
+
+    private async Task AddCopyAsync()
+    {
+        _busy = true;
+        _errorMessage = null;
+
+        var result = await Books.AddCopyAsync(Id);
+
+        _busy = false;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;
+            _errorMessage = result.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ChangeStatusAsync(int copyId, BookCopyStatus status)
+    {
+        _busy = true;
+        _errorMessage = null;
+
+        var result = await Books.ChangeCopyStatusAsync(copyId, status);
+
+        _busy = false;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;
+            _errorMessage = result.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task RemoveCopyAsync()
+    {
+        if (_confirmRemoveCopyId is not { } copyId) return;
+
+        _busy = true;
+        _errorMessage = null;
+
+        var result = await Books.RemoveCopyAsync(copyId);
+
+        _busy = false;
+        _confirmRemoveCopyId = null;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;
+            _errorMessage = result.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task DeleteBookAsync()
+    {
+        _busy = true;
+        _errorMessage = null;
+
+        var result = await Books.DeleteAsync(Id);
+
+        _busy = false;
+        _confirmDeleteBook = false;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;
+            _errorMessage = result.Message;
+            return;
+        }
+
+        Nav.NavigateTo("books");
+    }
+}

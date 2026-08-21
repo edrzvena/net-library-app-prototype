@@ -1,0 +1,65 @@
+@page "/loans/overdue"
+@rendermode InteractiveServer
+@inject LoanService Loans
+@inject IClock Clock
+
+<PageTitle>Keterlambatan</PageTitle>
+
+<PageHeader Title="Keterlambatan"
+            Subtitle="Pinjaman aktif yang sudah lewat jatuh tempo, paling lama di atas.">
+    <Actions>
+        <a class="btn btn-outline-secondary" href="loans">Semua Peminjaman</a>
+    </Actions>
+</PageHeader>
+
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead>
+        <tr>
+            <th>Anggota</th>
+            <th>Buku</th>
+            <th>Jatuh Tempo</th>
+            <th class="text-end">Telat</th>
+            <th class="text-end">Estimasi Denda</th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var loan in _loans)
+        {
+            @* DaysLate & estimasi denda dihitung dari Loan.DaysLate(today) dan LoanPolicy —
+               bukan angka literal, dan bukan aturan baru yang ditulis di halaman ini. *@
+            var daysLate = loan.DaysLate(Clock.Today);
+            <tr>
+                <td>
+                    <a href="members/@loan.MemberId">@loan.Member.FullName</a>
+                    <span class="small d-block text-muted">@loan.Member.Code</span>
+                </td>
+                <td>
+                    @loan.BookCopy.Book.Title
+                    <span class="small d-block text-muted">@loan.BookCopy.InventoryCode</span>
+                </td>
+                <td>@loan.DueDate.ToString("dd MMM yyyy")</td>
+                <td class="text-end"><span class="badge text-bg-danger">@daysLate hari</span></td>
+                <td class="text-end">@((daysLate * LoanPolicy.FinePerLateDay).ToString("C0"))</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+@if (_loans.Count == 0)
+{
+    <p class="text-muted">Tidak ada keterlambatan. Bagus.</p>
+}
+else
+{
+    <p class="text-muted small">
+        Denda di atas baru estimasi berjalan; nominal finalnya terbit saat buku dikembalikan (BR-06).
+    </p>
+}
+
+@code {
+    private List<Loan> _loans = [];
+
+    protected override async Task OnInitializedAsync() => _loans = await Loans.GetOverdueAsync();
+}

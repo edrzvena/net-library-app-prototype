@@ -1,0 +1,185 @@
+@page "/books/new"
+@page "/books/{Id:int}/edit"
+@rendermode InteractiveServer
+@inject BookService Books
+@inject LookupService Lookups
+@inject NavigationManager Nav
+
+<PageTitle>@(IsEdit ? "Ubah Buku" : "Tambah Buku")</PageTitle>
+
+<PageHeader Title="@(IsEdit ? "Ubah Buku" : "Tambah Buku")"
+            Subtitle="@(IsEdit ? "Perbarui data buku." : "Daftarkan judul baru beserta eksemplar awalnya.")"/>
+
+<ErrorAlert Code="@_errorCode" Message="@_errorMessage" OnDismiss="() => _errorMessage = null"/>
+
+@if (_notFound)
+{
+    <p class="text-muted">Buku tidak ditemukan.</p>
+}
+else
+{
+    <EditForm Model="_model" OnValidSubmit="SubmitAsync" FormName="book-form">
+        <DataAnnotationsValidator/>
+
+        <div class="row g-3">
+            <div class="col-md-8">
+                <label class="form-label" for="title">Judul</label>
+                <InputText id="title" class="form-control" @bind-Value="_model.Title"/>
+                <ValidationMessage For="() => _model.Title"/>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label" for="isbn">ISBN</label>
+                <InputText id="isbn" class="form-control" @bind-Value="_model.Isbn"/>
+                <div class="form-text">ISBN-10 atau ISBN-13. Tanda hubung boleh, nanti dinormalkan.</div>
+                <ValidationMessage For="() => _model.Isbn"/>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label" for="author">Penulis</label>
+                <InputSelect id="author" class="form-select" @bind-Value="_model.AuthorId">
+                    <option value="0">— pilih penulis —</option>
+                    @foreach (var a in _authors)
+                    {
+                        <option value="@a.Id">@a.Name</option>
+                    }
+                </InputSelect>
+                <ValidationMessage For="() => _model.AuthorId"/>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label" for="category">Kategori</label>
+                <InputSelect id="category" class="form-select" @bind-Value="_model.CategoryId">
+                    <option value="0">— pilih kategori —</option>
+                    @foreach (var c in _categories)
+                    {
+                        <option value="@c.Id">@c.Name</option>
+                    }
+                </InputSelect>
+                <ValidationMessage For="() => _model.CategoryId"/>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label" for="publisher">Penerbit</label>
+                <InputText id="publisher" class="form-control" @bind-Value="_model.Publisher"/>
+                <ValidationMessage For="() => _model.Publisher"/>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label" for="year">Tahun Terbit</label>
+                <InputNumber id="year" class="form-control" @bind-Value="_model.PublishedYear"/>
+                <ValidationMessage For="() => _model.PublishedYear"/>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label" for="cost">Harga Penggantian</label>
+                <InputNumber id="cost" class="form-control" @bind-Value="_model.ReplacementCost"/>
+                <ValidationMessage For="() => _model.ReplacementCost"/>
+            </div>
+
+            @if (!IsEdit)
+            {
+                <div class="col-md-3">
+                    <label class="form-label" for="copies">Jumlah Kopi Awal</label>
+                    <InputNumber id="copies" class="form-control" @bind-Value="_initialCopyCount"/>
+                    <div class="form-text">Kode inventaris dibuat otomatis.</div>
+                </div>
+            }
+
+            <div class="col-12">
+                <label class="form-label" for="description">Deskripsi</label>
+                <InputTextArea id="description" class="form-control" rows="4" @bind-Value="_model.Description"/>
+                <ValidationMessage For="() => _model.Description"/>
+            </div>
+
+            <div class="col-12 d-flex gap-2">
+                <button type="submit" class="btn btn-primary" disabled="@_busy">
+                    @if (_busy)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    Simpan
+                </button>
+                <a class="btn btn-secondary" href="@CancelUrl">Batal</a>
+            </div>
+        </div>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private Book _model = new();
+    private List<Author> _authors = [];
+    private List<Category> _categories = [];
+    private int _initialCopyCount = 1;
+    private bool _notFound;
+
+    private bool _busy;
+    private string? _errorCode;
+    private string? _errorMessage;
+
+    private bool IsEdit => Id is > 0;
+    private string CancelUrl => IsEdit ? $"books/{Id}" : "books";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _authors = await Lookups.GetAuthorsAsync();
+        _categories = await Lookups.GetCategoriesAsync();
+
+        if (!IsEdit)
+        {
+            _model = new Book();
+            return;
+        }
+
+        var book = await Books.GetByIdAsync(Id!.Value);
+        if (book is null)
+        {
+            _notFound = true;
+            return;
+        }
+
+        _model = book;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        _errorMessage = null;
+
+        // Tidak ada satupun aturan bisnis di sini — validasi ISBN, duplikat, dan
+        // keberadaan penulis/kategori semuanya ditegakkan BookService.
+        int bookId;
+        if (IsEdit)
+        {
+            var updated = await Books.UpdateAsync(_model);
+            _busy = false;
+
+            if (!updated.Succeeded)
+            {
+                _errorCode = updated.Code;
+                _errorMessage = updated.Message;
+                return;
+            }
+
+            bookId = Id!.Value;
+        }
+        else
+        {
+            var created = await Books.CreateAsync(_model, _initialCopyCount);
+            _busy = false;
+
+            if (!created.Succeeded)
+            {
+                _errorCode = created.Code;
+                _errorMessage = created.Message;
+                return;
+            }
+
+            bookId = created.Value;
+        }
+
+        Nav.NavigateTo($"books/{bookId}");
+    }
+}

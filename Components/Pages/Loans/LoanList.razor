@@ -1,0 +1,234 @@
+@page "/loans"
+@rendermode InteractiveServer
+@inject LoanService Loans
+@inject IClock Clock
+
+<PageTitle>Peminjaman</PageTitle>
+
+<PageHeader Title="Peminjaman" Subtitle="Riwayat dan status seluruh peminjaman.">
+    <Actions>
+        <a class="btn btn-outline-secondary" href="loans/overdue">Keterlambatan</a>
+        <a class="btn btn-primary" href="loans/borrow">
+            <i class="bi bi-plus-lg"></i> Pinjam Buku
+        </a>
+    </Actions>
+</PageHeader>
+
+<ErrorAlert Code="@_errorCode" Message="@_errorMessage" OnDismiss="() => _errorMessage = null"/>
+
+@if (_notice is not null)
+{
+    <div class="alert alert-success alert-dismissible d-flex align-items-start gap-2">
+        <i class="bi bi-check-circle-fill mt-1"></i>
+        <div>@_notice</div>
+        <button type="button" class="btn-close" aria-label="Tutup" @onclick="() => _notice = null"></button>
+    </div>
+}
+
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <SearchBar @bind-Value="_keyword"
+                   Placeholder="Cari anggota, judul buku, atau kode inventaris..."
+                   OnSearch="() => LoadAsync(1)"/>
+    </div>
+
+    <div class="col-md-6">
+        @* BR-19: filter memakai LoanFilter, bukan LoanStatus — "Terlambat" tidak pernah disimpan. *@
+        <div class="btn-group" role="group">
+            <button class="btn @(_filter is null ? "btn-primary" : "btn-outline-primary")"
+                    @onclick="() => ApplyFilterAsync(null)">
+                Semua
+            </button>
+            @foreach (var f in Enum.GetValues<LoanFilter>())
+            {
+                <button class="btn @(_filter == f ? "btn-primary" : "btn-outline-primary")"
+                        @onclick="() => ApplyFilterAsync(f)">
+                    @FilterLabel(f)
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead>
+        <tr>
+            <th>Anggota</th>
+            <th>Buku</th>
+            <th>Dipinjam</th>
+            <th>Jatuh Tempo</th>
+            <th>Dikembalikan</th>
+            <th>Status</th>
+            <th class="text-end">Aksi</th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var loan in _result.Items)
+        {
+            var (text, variant) = StatusBadge.Describe(loan, Clock.Today);
+            <tr>
+                <td>
+                    <a href="members/@loan.MemberId">@loan.Member.FullName</a>
+                    <span class="small d-block text-muted">@loan.Member.Code</span>
+                </td>
+                <td>
+                    @loan.BookCopy.Book.Title
+                    <span class="small d-block text-muted">@loan.BookCopy.InventoryCode</span>
+                </td>
+                <td>@loan.BorrowedAt.ToString("dd MMM yyyy")</td>
+                <td>@loan.DueDate.ToString("dd MMM yyyy")</td>
+                <td>@(loan.ReturnedAt?.ToString("dd MMM yyyy") ?? "—")</td>
+                <td><StatusBadge Text="@text" Variant="@variant"/></td>
+                <td class="text-end">
+                    @if (loan.Status == LoanStatus.Active)
+                    {
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary" disabled="@_busy"
+                                    @onclick="() => ReturnAsync(loan.Id)">
+                                Kembalikan
+                            </button>
+                            <button class="btn btn-outline-secondary" disabled="@_busy"
+                                    @onclick="() => RenewAsync(loan.Id)">
+                                Perpanjang
+                            </button>
+                            <button class="btn btn-outline-danger" disabled="@_busy"
+                                    @onclick="() => _confirmLostLoanId = loan.Id">
+                                Tandai Hilang
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <span class="text-muted">—</span>
+                    }
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+@if (_result.TotalCount == 0)
+{
+    <p class="text-muted">Tidak ada pinjaman yang cocok dengan filter ini.</p>
+}
+
+<PaginationControl Page="_result.Page" PageSize="_result.PageSize" TotalCount="_result.TotalCount"
+                   OnPageChanged="LoadAsync"/>
+
+<ConfirmDialog Visible="_confirmLostLoanId is not null"
+               Title="Tandai buku hilang?"
+               Message="Eksemplar akan berstatus Hilang dan denda sebesar harga penggantian akan diterbitkan."
+               ConfirmText="Tandai Hilang"
+               Busy="_busy"
+               OnConfirm="MarkAsLostAsync"
+               OnCancel="() => _confirmLostLoanId = null"/>
+
+@code {
+    private PagedList<Loan> _result = PagedList<Loan>.Empty(1, PageSize);
+
+    private string? _keyword;
+    private LoanFilter? _filter;
+    private int? _confirmLostLoanId;
+
+    private bool _busy;
+    private string? _errorCode;
+    private string? _errorMessage;
+    private string? _notice;
+
+    private const int PageSize = 10;
+
+    protected override Task OnInitializedAsync() => LoadAsync(1);
+
+    private static string FilterLabel(LoanFilter filter) => filter switch
+    {
+        LoanFilter.Active => "Aktif",
+        LoanFilter.Overdue => "Terlambat",
+        LoanFilter.Returned => "Dikembalikan",
+        LoanFilter.Lost => "Hilang",
+        _ => filter.ToString()
+    };
+
+    private async Task LoadAsync(int page)
+    {
+        _result = await Loans.SearchAsync(_keyword, _filter, page: page, pageSize: PageSize);
+    }
+
+    private async Task ApplyFilterAsync(LoanFilter? filter)
+    {
+        _filter = filter;
+        await LoadAsync(1);
+    }
+
+    private async Task ReturnAsync(int loanId)
+    {
+        _busy = true;
+        _errorMessage = null;
+        _notice = null;
+
+        // BR-06 (denda telat) & BR-11 (kopi jadi Available) dihitung LoanService, bukan di sini.
+        var result = await Loans.ReturnAsync(loanId);
+
+        _busy = false;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;
+            _errorMessage = result.Message;
+            return;
+        }
+
+        var summary = result.Value!;
+        _notice = summary.IsLate
+            ? $"Buku dikembalikan terlambat {summary.DaysLate} hari. Denda {summary.FineAmount:C0} tercatat belum lunas."
+            : "Buku dikembalikan tepat waktu. Tidak ada denda.";
+
+        await LoadAsync(_result.Page);
+    }
+
+    private async Task RenewAsync(int loanId)
+    {
+        _busy = true;
+        _errorMessage = null;
+        _notice = null;
+
+        var result = await Loans.RenewAsync(loanId);
+
+        _busy = false;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;
+            _errorMessage = result.Message;
+            return;
+        }
+
+        _notice = $"Pinjaman diperpanjang sampai {result.Value!.DueDate:dd MMM yyyy}.";
+        await LoadAsync(_result.Page);
+    }
+
+    private async Task MarkAsLostAsync()
+    {
+        if (_confirmLostLoanId is not { } loanId) return;
+
+        _busy = true;
+        _errorMessage = null;
+        _notice = null;
+
+        var result = await Loans.MarkAsLostAsync(loanId);
+
+        _busy = false;
+        _confirmLostLoanId = null;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;
+            _errorMessage = result.Message;
+            return;
+        }
+
+        _notice = $"Pinjaman ditandai hilang. Denda {result.Value!.Amount:C0} diterbitkan.";
+        await LoadAsync(_result.Page);
+    }
+}

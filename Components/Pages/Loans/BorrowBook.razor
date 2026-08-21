@@ -1,0 +1,147 @@
+@page "/loans/borrow"
+@rendermode InteractiveServer
+@inject LoanService Loans
+@inject MemberService Members
+@inject BookService Books
+@inject NavigationManager Nav
+
+<PageTitle>Pinjam Buku</PageTitle>
+
+<PageHeader Title="Pinjam Buku" Subtitle="Pilih anggota, lalu pilih buku yang tersedia."/>
+
+<ErrorAlert Code="@_errorCode" Message="@_errorMessage" OnDismiss="() => _errorMessage = null"/>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h2 class="h6">1. Pilih anggota</h2>
+
+                <SearchBar @bind-Value="_memberKeyword"
+                           Placeholder="Cari nama, kode, atau email..."
+                           OnSearch="SearchMembersAsync"/>
+
+                <div class="list-group list-group-flush mt-3">
+                    @foreach (var member in _members)
+                    {
+                        var (text, variant) = StatusBadge.Describe(member.Status);
+                        <button type="button"
+                                class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(_selectedMemberId == member.Id ? "active" : null)"
+                                @onclick="() => _selectedMemberId = member.Id">
+                            <span>
+                                @member.FullName
+                                <span class="small d-block @(_selectedMemberId == member.Id ? null : "text-muted")">@member.Code</span>
+                            </span>
+                            <StatusBadge Text="@text" Variant="@variant"/>
+                        </button>
+                    }
+                </div>
+
+                @if (_members.Count == 0)
+                {
+                    <p class="text-muted mt-3">Tidak ada anggota yang cocok.</p>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h2 class="h6">2. Pilih buku</h2>
+
+                <SearchBar @bind-Value="_bookKeyword"
+                           Placeholder="Cari judul, ISBN, atau penulis..."
+                           OnSearch="SearchBooksAsync"/>
+
+                <div class="list-group list-group-flush mt-3">
+                    @foreach (var book in _books)
+                    {
+                        <button type="button"
+                                class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(_selectedBookId == book.Id ? "active" : null)"
+                                @onclick="() => _selectedBookId = book.Id">
+                            <span>
+                                @book.Title
+                                <span class="small d-block @(_selectedBookId == book.Id ? null : "text-muted")">@book.Author.Name</span>
+                            </span>
+                            <span class="badge text-bg-success">@book.AvailableCopies tersedia</span>
+                        </button>
+                    }
+                </div>
+
+                @if (_books.Count == 0)
+                {
+                    <p class="text-muted mt-3">Tidak ada buku yang tersedia untuk pencarian ini.</p>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-4">
+    <button class="btn btn-primary btn-lg"
+            disabled="@(_busy || _selectedMemberId == 0 || _selectedBookId == 0)"
+            @onclick="BorrowAsync">
+        @if (_busy)
+        {
+            <span class="spinner-border spinner-border-sm me-1"></span>
+        }
+        Pinjam
+    </button>
+</div>
+
+@code {
+    private List<Member> _members = [];
+    private List<Book> _books = [];
+
+    private string? _memberKeyword;
+    private string? _bookKeyword;
+
+    private int _selectedMemberId;
+    private int _selectedBookId;
+
+    private bool _busy;
+    private string? _errorCode;
+    private string? _errorMessage;
+
+    private const int ListSize = 8;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await SearchMembersAsync();
+        await SearchBooksAsync();
+    }
+
+    private async Task SearchMembersAsync()
+    {
+        var result = await Members.SearchAsync(_memberKeyword, page: 1, pageSize: ListSize);
+        _members = [.. result.Items];
+    }
+
+    private async Task SearchBooksAsync()
+    {
+        // "Hanya tersedia" dipasang mati di sini — daftar ini memang khusus buku yang bisa dipinjam.
+        var result = await Books.SearchAsync(_bookKeyword, onlyAvailable: true, page: 1, pageSize: ListSize);
+        _books = [.. result.Items];
+    }
+
+    private async Task BorrowAsync()
+    {
+        _busy = true;
+        _errorMessage = null;
+
+        // BR-01/03/04/05 ditegakkan di LoanService — halaman ini cuma menampilkan hasilnya.
+        var result = await Loans.BorrowAsync(_selectedMemberId, _selectedBookId);
+
+        _busy = false;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;          // "BR-01", "BR-03", ...
+            _errorMessage = result.Message;    // sudah Bahasa Indonesia dari service
+            return;
+        }
+
+        Nav.NavigateTo($"members/{_selectedMemberId}");
+    }
+}

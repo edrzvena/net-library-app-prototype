@@ -1,7 +1,165 @@
-﻿@page "/"
+@page "/"
+@rendermode InteractiveServer
+@inject DashboardService Dashboard
+@inject IClock Clock
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Dashboard</PageTitle>
 
-<h1>Hello, world!</h1>
+<PageHeader Title="Dashboard" Subtitle="@($"Ringkasan per {Clock.Today:dd MMMM yyyy}")">
+    <Actions>
+        <a class="btn btn-primary" href="loans/borrow">
+            <i class="bi bi-plus-lg"></i> Pinjam Buku
+        </a>
+    </Actions>
+</PageHeader>
 
-Welcome to your new app.
+@if (_summary is null)
+{
+    <p class="text-muted">Memuat ringkasan...</p>
+}
+else
+{
+    <div class="row row-cols-md-4 g-3 mb-4">
+        <div class="col">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Total Buku</div>
+                    <div class="h4 mb-0">@_summary.TotalBooks</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Total Eksemplar</div>
+                    <div class="h4 mb-0">@_summary.TotalCopies</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Eksemplar Tersedia</div>
+                    <div class="h4 mb-0 text-success">@_summary.AvailableCopies</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Anggota Aktif</div>
+                    <div class="h4 mb-0">@_summary.ActiveMembers</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Pinjaman Aktif</div>
+                    <div class="h4 mb-0">@_summary.ActiveLoans</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Terlambat</div>
+                    <div class="h4 mb-0 @(_summary.OverdueLoans > 0 ? "text-danger" : null)">@_summary.OverdueLoans</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Denda Belum Lunas</div>
+                    <div class="h4 mb-0 @(_summary.OutstandingFineTotal > 0 ? "text-danger" : null)">
+                        @_summary.OutstandingFineTotal.ToString("C0")
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h2 class="h5 mb-0">Pinjaman Terbaru</h2>
+                <a href="loans" class="small">Lihat semua</a>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead>
+                    <tr>
+                        <th>Anggota</th>
+                        <th>Buku</th>
+                        <th>Dipinjam</th>
+                        <th>Status</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var loan in _summary.RecentLoans)
+                    {
+                        var (text, variant) = StatusBadge.Describe(loan, Clock.Today);
+                        <tr>
+                            <td><a href="members/@loan.MemberId">@loan.Member.FullName</a></td>
+                            <td>@loan.BookCopy.Book.Title</td>
+                            <td>@loan.BorrowedAt.ToString("dd MMM")</td>
+                            <td><StatusBadge Text="@text" Variant="@variant"/></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+
+            @if (_summary.RecentLoans.Count == 0)
+            {
+                <p class="text-muted">Belum ada peminjaman.</p>
+            }
+        </div>
+
+        <div class="col-lg-6">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h2 class="h5 mb-0">Keterlambatan Terparah</h2>
+                <a href="loans/overdue" class="small">Lihat semua</a>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead>
+                    <tr>
+                        <th>Anggota</th>
+                        <th>Buku</th>
+                        <th>Jatuh Tempo</th>
+                        <th class="text-end">Telat</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var loan in _summary.WorstOverdueLoans)
+                    {
+                        <tr>
+                            <td><a href="members/@loan.MemberId">@loan.Member.FullName</a></td>
+                            <td>@loan.BookCopy.Book.Title</td>
+                            <td>@loan.DueDate.ToString("dd MMM")</td>
+                            <td class="text-end">
+                                <span class="badge text-bg-danger">@loan.DaysLate(Clock.Today) hari</span>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+
+            @if (_summary.WorstOverdueLoans.Count == 0)
+            {
+                <p class="text-muted">Tidak ada keterlambatan.</p>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private DashboardSummary? _summary;
+
+    protected override async Task OnInitializedAsync() => _summary = await Dashboard.GetSummaryAsync();
+}

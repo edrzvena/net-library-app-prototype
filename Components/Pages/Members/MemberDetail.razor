@@ -1,0 +1,284 @@
+@page "/members/{Id:int}"
+@rendermode InteractiveServer
+@inject MemberService Members
+@inject LoanService Loans
+@inject FineService Fines
+@inject IClock Clock
+
+<PageTitle>@(_member?.FullName ?? "Detail Anggota")</PageTitle>
+
+<ErrorAlert Code="@_errorCode" Message="@_errorMessage" OnDismiss="() => _errorMessage = null"/>
+
+@if (_member is null)
+{
+    <p class="text-muted">Anggota tidak ditemukan.</p>
+}
+else
+{
+    var (statusText, statusVariant) = StatusBadge.Describe(_member.Status);
+
+    <PageHeader Title="@_member.FullName" Subtitle="@($"{_member.Code} · bergabung {_member.JoinedAt:dd MMM yyyy}")">
+        <Actions>
+            <a class="btn btn-outline-secondary" href="members/@_member.Id/edit">Ubah</a>
+            @if (_member.Status == MemberStatus.Active)
+            {
+                <button class="btn btn-outline-danger" disabled="@_busy" @onclick="SuspendAsync">
+                    @if (_busy)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    Tangguhkan
+                </button>
+            }
+            else
+            {
+                <button class="btn btn-outline-success" disabled="@_busy" @onclick="ReactivateAsync">
+                    @if (_busy)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    Aktifkan
+                </button>
+            }
+        </Actions>
+    </PageHeader>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Status</div>
+                    <StatusBadge Text="@statusText" Variant="@statusVariant"/>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Pinjaman Aktif</div>
+                    @_activeLoans.Count dari @LoanPolicy.MaxActiveLoansPerMember
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Denda Tertunggak</div>
+                    <span class="@(_outstanding > 0 ? "text-danger fw-semibold" : null)">
+                        @_outstanding.ToString("C0")
+                    </span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-muted small">Kontak</div>
+                    @(_member.PhoneNumber ?? "—")<br/>
+                    <span class="small text-muted">@_member.Email</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <button class="nav-link @(_tab == Tab.Active ? "active" : null)" @onclick="() => _tab = Tab.Active">
+                Pinjaman Aktif <span class="badge text-bg-secondary">@_activeLoans.Count</span>
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(_tab == Tab.History ? "active" : null)" @onclick="() => _tab = Tab.History">
+                Riwayat <span class="badge text-bg-secondary">@_history.TotalCount</span>
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(_tab == Tab.Fines ? "active" : null)" @onclick="() => _tab = Tab.Fines">
+                Denda <span class="badge text-bg-secondary">@_fines.Count</span>
+            </button>
+        </li>
+    </ul>
+
+    @if (_tab == Tab.Active)
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                <tr>
+                    <th>Buku</th>
+                    <th>Kode Inventaris</th>
+                    <th>Dipinjam</th>
+                    <th>Jatuh Tempo</th>
+                    <th>Status</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var loan in _activeLoans)
+                {
+                    var (text, variant) = StatusBadge.Describe(loan, Clock.Today);
+                    <tr>
+                        <td>@loan.BookCopy.Book.Title</td>
+                        <td><code>@loan.BookCopy.InventoryCode</code></td>
+                        <td>@loan.BorrowedAt.ToString("dd MMM yyyy")</td>
+                        <td>@loan.DueDate.ToString("dd MMM yyyy")</td>
+                        <td><StatusBadge Text="@text" Variant="@variant"/></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        @if (_activeLoans.Count == 0)
+        {
+            <p class="text-muted">Tidak ada pinjaman aktif.</p>
+        }
+    }
+    else if (_tab == Tab.History)
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                <tr>
+                    <th>Buku</th>
+                    <th>Dipinjam</th>
+                    <th>Jatuh Tempo</th>
+                    <th>Dikembalikan</th>
+                    <th>Status</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var loan in _history.Items)
+                {
+                    var (text, variant) = StatusBadge.Describe(loan, Clock.Today);
+                    <tr>
+                        <td>@loan.BookCopy.Book.Title</td>
+                        <td>@loan.BorrowedAt.ToString("dd MMM yyyy")</td>
+                        <td>@loan.DueDate.ToString("dd MMM yyyy")</td>
+                        <td>@(loan.ReturnedAt?.ToString("dd MMM yyyy") ?? "—")</td>
+                        <td><StatusBadge Text="@text" Variant="@variant"/></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        @if (_history.TotalCount == 0)
+        {
+            <p class="text-muted">Belum ada riwayat peminjaman.</p>
+        }
+
+        <PaginationControl Page="_history.Page" PageSize="_history.PageSize" TotalCount="_history.TotalCount"
+                           OnPageChanged="LoadHistoryAsync"/>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                <tr>
+                    <th>Terbit</th>
+                    <th>Alasan</th>
+                    <th class="text-end">Jumlah</th>
+                    <th>Status</th>
+                    <th>Dibayar</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var fine in _fines)
+                {
+                    var (statusLabel, statusColor) = StatusBadge.Describe(fine.Status);
+                    var (reasonLabel, reasonColor) = StatusBadge.Describe(fine.Reason);
+                    <tr>
+                        <td>@fine.IssuedAt.ToString("dd MMM yyyy")</td>
+                        <td><StatusBadge Text="@reasonLabel" Variant="@reasonColor"/></td>
+                        <td class="text-end">@fine.Amount.ToString("C0")</td>
+                        <td><StatusBadge Text="@statusLabel" Variant="@statusColor"/></td>
+                        <td>@(fine.PaidAt?.ToString("dd MMM yyyy") ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        @if (_fines.Count == 0)
+        {
+            <p class="text-muted">Tidak ada denda.</p>
+        }
+    }
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private enum Tab { Active, History, Fines }
+
+    private Tab _tab = Tab.Active;
+
+    private Member? _member;
+    private List<Loan> _activeLoans = [];
+    private PagedList<Loan> _history = PagedList<Loan>.Empty(1, PageSize);
+    private List<Fine> _fines = [];
+    private decimal _outstanding;
+
+    private bool _busy;
+    private string? _errorCode;
+    private string? _errorMessage;
+
+    private const int PageSize = 10;
+
+    protected override Task OnParametersSetAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _member = await Members.GetByIdAsync(Id);
+        if (_member is null) return;
+
+        _activeLoans = await Loans.GetActiveByMemberAsync(Id);
+        _fines = await Fines.GetByMemberAsync(Id);
+        _outstanding = await Fines.GetUnpaidTotalAsync(Id);
+        await LoadHistoryAsync(_history.Page);
+    }
+
+    private async Task LoadHistoryAsync(int page)
+    {
+        _history = await Loans.SearchAsync(memberId: Id, page: page, pageSize: PageSize);
+    }
+
+    private async Task SuspendAsync()
+    {
+        _busy = true;
+        _errorMessage = null;
+
+        var result = await Members.SuspendAsync(Id);
+
+        _busy = false;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;
+            _errorMessage = result.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ReactivateAsync()
+    {
+        _busy = true;
+        _errorMessage = null;
+
+        var result = await Members.ReactivateAsync(Id);
+
+        _busy = false;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;
+            _errorMessage = result.Message;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+}

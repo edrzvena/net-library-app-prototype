@@ -1,0 +1,98 @@
+@page "/members"
+@rendermode InteractiveServer
+@inject MemberService Members
+@inject FineService Fines
+
+<PageTitle>Anggota</PageTitle>
+
+<PageHeader Title="Anggota" Subtitle="Daftar anggota perpustakaan.">
+    <Actions>
+        <a class="btn btn-primary" href="members/new">
+            <i class="bi bi-plus-lg"></i> Daftarkan Anggota
+        </a>
+    </Actions>
+</PageHeader>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-8">
+        <SearchBar @bind-Value="_keyword"
+                   Placeholder="Cari nama, kode, atau email..."
+                   OnSearch="() => LoadAsync(1)"/>
+    </div>
+
+    <div class="col-md-4">
+        <select class="form-select" @bind="_status" @bind:after="() => LoadAsync(1)">
+            <option value="">Semua status</option>
+            @foreach (var s in Enum.GetValues<MemberStatus>())
+            {
+                <option value="@s">@StatusBadge.Describe(s).Text</option>
+            }
+        </select>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead>
+        <tr>
+            <th>Kode</th>
+            <th>Nama</th>
+            <th>Email</th>
+            <th>Status</th>
+            <th class="text-end">Denda Tertunggak</th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var member in _result.Items)
+        {
+            var (text, variant) = StatusBadge.Describe(member.Status);
+            <tr>
+                <td><code>@member.Code</code></td>
+                <td><a href="members/@member.Id">@member.FullName</a></td>
+                <td>@member.Email</td>
+                <td><StatusBadge Text="@text" Variant="@variant"/></td>
+                <td class="text-end">
+                    @if (_outstanding.TryGetValue(member.Id, out var amount) && amount > 0)
+                    {
+                        <span class="text-danger fw-semibold">@amount.ToString("C0")</span>
+                    }
+                    else
+                    {
+                        <span class="text-muted">—</span>
+                    }
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+@if (_result.TotalCount == 0)
+{
+    <p class="text-muted">Tidak ada anggota yang cocok dengan pencarian.</p>
+}
+
+<PaginationControl Page="_result.Page" PageSize="_result.PageSize" TotalCount="_result.TotalCount"
+                   OnPageChanged="LoadAsync"/>
+
+@code {
+    private PagedList<Member> _result = PagedList<Member>.Empty(1, PageSize);
+    private Dictionary<int, decimal> _outstanding = [];
+
+    private string? _keyword;
+    private MemberStatus? _status;
+
+    private const int PageSize = 10;
+
+    protected override Task OnInitializedAsync() => LoadAsync(1);
+
+    private async Task LoadAsync(int page)
+    {
+        _result = await Members.SearchAsync(_keyword, _status, page, PageSize);
+
+        // Kolom denda diambil per anggota di halaman ini saja (10 baris), bukan lewat join di service.
+        _outstanding = [];
+        foreach (var member in _result.Items)
+            _outstanding[member.Id] = await Fines.GetUnpaidTotalAsync(member.Id);
+    }
+}

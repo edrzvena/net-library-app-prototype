@@ -1,0 +1,180 @@
+@page "/fines"
+@rendermode InteractiveServer
+@inject FineService Fines
+
+<PageTitle>Denda</PageTitle>
+
+<PageHeader Title="Denda" Subtitle="Catatan denda keterlambatan, buku hilang, dan buku rusak."/>
+
+<ErrorAlert Code="@_errorCode" Message="@_errorMessage" OnDismiss="() => _errorMessage = null"/>
+
+@if (_notice is not null)
+{
+    <div class="alert alert-success alert-dismissible d-flex align-items-start gap-2">
+        <i class="bi bi-check-circle-fill mt-1"></i>
+        <div>@_notice</div>
+        <button type="button" class="btn-close" aria-label="Tutup" @onclick="() => _notice = null"></button>
+    </div>
+}
+
+<div class="btn-group mb-3" role="group">
+    <button class="btn @(_status is null ? "btn-primary" : "btn-outline-primary")"
+            @onclick="() => ApplyStatusAsync(null)">
+        Semua
+    </button>
+    @foreach (var s in Enum.GetValues<FineStatus>())
+    {
+        <button class="btn @(_status == s ? "btn-primary" : "btn-outline-primary")"
+                @onclick="() => ApplyStatusAsync(s)">
+            @StatusBadge.Describe(s).Text
+        </button>
+    }
+</div>
+
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead>
+        <tr>
+            <th>Anggota</th>
+            <th>Buku</th>
+            <th>Alasan</th>
+            <th>Terbit</th>
+            <th class="text-end">Jumlah</th>
+            <th>Status</th>
+            <th class="text-end">Aksi</th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var fine in _result.Items)
+        {
+            var (statusLabel, statusColor) = StatusBadge.Describe(fine.Status);
+            var (reasonLabel, reasonColor) = StatusBadge.Describe(fine.Reason);
+            <tr>
+                <td>
+                    <a href="members/@fine.MemberId">@fine.Member.FullName</a>
+                    <span class="small d-block text-muted">@fine.Member.Code</span>
+                </td>
+                <td>@fine.Loan.BookCopy.Book.Title</td>
+                <td><StatusBadge Text="@reasonLabel" Variant="@reasonColor"/></td>
+                <td>@fine.IssuedAt.ToString("dd MMM yyyy")</td>
+                <td class="text-end">@fine.Amount.ToString("C0")</td>
+                <td>
+                    <StatusBadge Text="@statusLabel" Variant="@statusColor"/>
+                    @if (fine.Status == FineStatus.Waived && !string.IsNullOrWhiteSpace(fine.WaiveReason))
+                    {
+                        <span class="small d-block text-muted">@fine.WaiveReason</span>
+                    }
+                </td>
+                <td class="text-end">
+                    @if (fine.Status == FineStatus.Unpaid)
+                    {
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary" disabled="@_busy"
+                                    @onclick="() => PayAsync(fine.Id)">
+                                Bayar
+                            </button>
+                            <button class="btn btn-outline-danger" disabled="@_busy"
+                                    @onclick="() => _waiveFineId = fine.Id">
+                                Hapuskan
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <span class="text-muted">—</span>
+                    }
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+@if (_result.TotalCount == 0)
+{
+    <p class="text-muted">Tidak ada denda dengan status ini.</p>
+}
+
+<PaginationControl Page="_result.Page" PageSize="_result.PageSize" TotalCount="_result.TotalCount"
+                   OnPageChanged="LoadAsync"/>
+
+@* BR-20: alasan wajib. Panjang minimalnya tetap ditegakkan FineService. *@
+<ConfirmDialog Visible="_waiveFineId is not null"
+               Title="Hapuskan denda?"
+               Message="Denda ini akan dianggap selesai tanpa pembayaran. Alasannya dicatat permanen."
+               RequireReason="true"
+               ReasonPlaceholder="Contoh: buku rusak karena banjir di gudang"
+               ConfirmText="Hapuskan"
+               Busy="_busy"
+               OnConfirm="WaiveAsync"
+               OnCancel="() => _waiveFineId = null"/>
+
+@code {
+    private PagedList<Fine> _result = PagedList<Fine>.Empty(1, PageSize);
+
+    private FineStatus? _status = FineStatus.Unpaid;
+    private int? _waiveFineId;
+
+    private bool _busy;
+    private string? _errorCode;
+    private string? _errorMessage;
+    private string? _notice;
+
+    private const int PageSize = 10;
+
+    protected override Task OnInitializedAsync() => LoadAsync(1);
+
+    private async Task LoadAsync(int page) => _result = await Fines.SearchAsync(_status, page, PageSize);
+
+    private async Task ApplyStatusAsync(FineStatus? status)
+    {
+        _status = status;
+        await LoadAsync(1);
+    }
+
+    private async Task PayAsync(int fineId)
+    {
+        _busy = true;
+        _errorMessage = null;
+        _notice = null;
+
+        // BR-22 (lunas penuh) ditegakkan FineService.
+        var result = await Fines.PayAsync(fineId);
+
+        _busy = false;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;
+            _errorMessage = result.Message;
+            return;
+        }
+
+        _notice = "Pembayaran denda tercatat.";
+        await LoadAsync(_result.Page);
+    }
+
+    private async Task WaiveAsync(string? reason)
+    {
+        if (_waiveFineId is not { } fineId) return;
+
+        _busy = true;
+        _errorMessage = null;
+        _notice = null;
+
+        var result = await Fines.WaiveAsync(fineId, reason);
+
+        _busy = false;
+
+        if (!result.Succeeded)
+        {
+            _errorCode = result.Code;
+            _errorMessage = result.Message;
+            return;
+        }
+
+        _waiveFineId = null;
+        _notice = "Denda dihapuskan.";
+        await LoadAsync(_result.Page);
+    }
+}

@@ -1,0 +1,132 @@
+@page "/members/new"
+@page "/members/{Id:int}/edit"
+@rendermode InteractiveServer
+@inject MemberService Members
+@inject NavigationManager Nav
+
+<PageTitle>@(IsEdit ? "Ubah Anggota" : "Daftarkan Anggota")</PageTitle>
+
+<PageHeader Title="@(IsEdit ? "Ubah Anggota" : "Daftarkan Anggota")"
+            Subtitle="Kode anggota dan tanggal bergabung diisi otomatis oleh sistem."/>
+
+<ErrorAlert Code="@_errorCode" Message="@_errorMessage" OnDismiss="() => _errorMessage = null"/>
+
+@if (_notFound)
+{
+    <p class="text-muted">Anggota tidak ditemukan.</p>
+}
+else
+{
+    @* Field Code & JoinedAt sengaja TIDAK ditampilkan — lihat catatan form di PRD 8.3.
+       Service selalu menimpanya sendiri, jadi form tidak perlu (dan tidak boleh) mengisinya. *@
+    <EditForm Model="_model" OnValidSubmit="SubmitAsync" FormName="member-form">
+        <DataAnnotationsValidator/>
+
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label" for="fullname">Nama Lengkap</label>
+                <InputText id="fullname" class="form-control" @bind-Value="_model.FullName"/>
+                <ValidationMessage For="() => _model.FullName"/>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label" for="email">Email</label>
+                <InputText id="email" class="form-control" @bind-Value="_model.Email"/>
+                <ValidationMessage For="() => _model.Email"/>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label" for="phone">Nomor Telepon</label>
+                <InputText id="phone" class="form-control" @bind-Value="_model.PhoneNumber"/>
+                <ValidationMessage For="() => _model.PhoneNumber"/>
+            </div>
+
+            <div class="col-12">
+                <label class="form-label" for="address">Alamat</label>
+                <InputTextArea id="address" class="form-control" rows="3" @bind-Value="_model.Address"/>
+                <ValidationMessage For="() => _model.Address"/>
+            </div>
+
+            <div class="col-12 d-flex gap-2">
+                <button type="submit" class="btn btn-primary" disabled="@_busy">
+                    @if (_busy)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    Simpan
+                </button>
+                <a class="btn btn-secondary" href="@CancelUrl">Batal</a>
+            </div>
+        </div>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private Member _model = new();
+    private bool _notFound;
+
+    private bool _busy;
+    private string? _errorCode;
+    private string? _errorMessage;
+
+    private bool IsEdit => Id is > 0;
+    private string CancelUrl => IsEdit ? $"members/{Id}" : "members";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!IsEdit)
+        {
+            _model = new Member();
+            return;
+        }
+
+        var member = await Members.GetByIdAsync(Id!.Value);
+        if (member is null)
+        {
+            _notFound = true;
+            return;
+        }
+
+        _model = member;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        _errorMessage = null;
+
+        int memberId;
+        if (IsEdit)
+        {
+            var updated = await Members.UpdateAsync(_model);
+            _busy = false;
+
+            if (!updated.Succeeded)
+            {
+                _errorCode = updated.Code;
+                _errorMessage = updated.Message;
+                return;
+            }
+
+            memberId = Id!.Value;
+        }
+        else
+        {
+            var registered = await Members.RegisterAsync(_model);
+            _busy = false;
+
+            if (!registered.Succeeded)
+            {
+                _errorCode = registered.Code;
+                _errorMessage = registered.Message;
+                return;
+            }
+
+            memberId = registered.Value;
+        }
+
+        Nav.NavigateTo($"members/{memberId}");
+    }
+}
